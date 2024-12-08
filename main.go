@@ -20,8 +20,9 @@ func main() {
 	csClassGroup := r.Group("/CSharpClass") // 创建路由组
 	{
 		// Define API routes within the CSClass group.
-		csClassGroup.POST("/generate", csharpController.Generate)    // C# 类生成
-		csClassGroup.POST("/get_sheets", csharpController.GetSheets) // 获取工作表列表
+		csClassGroup.POST("/generate", csharpController.Generate)      // C# 类生成
+		csClassGroup.POST("/get_sheets", csharpController.GetSheets)   // 获取工作表列表
+		csClassGroup.POST("/test", csharpController.GenerateInsertSql) // 生成Insert语句
 	}
 
 	// Start the server.
