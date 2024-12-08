@@ -66,16 +66,14 @@ func (s *CSharpGeneratorService) mapCSharpType(typeName string) string {
 	}
 }
 
-// GenerateCSharpInsertMethodFromExcel Excel生成Insert语句
 func (s *CSharpGeneratorService) GenerateCSharpInsertMethodFromExcel(fileData []byte, sheetName string) (string, error) {
 	f, err := excelize.OpenReader(bytes.NewReader(fileData))
 	if err != nil {
 		return "", err
 	}
 	defer func(f *excelize.File) {
-		err := f.Close()
-		if err != nil {
-
+		if closeErr := f.Close(); closeErr != nil {
+			// 这里可以记录错误日志
 		}
 	}(f)
 
@@ -84,57 +82,61 @@ func (s *CSharpGeneratorService) GenerateCSharpInsertMethodFromExcel(fileData []
 		return "", err
 	}
 
-	// Assuming the class name is in the first cell of the first row.
+	// 获取表名并将其格式化为首字母大写
 	tableName := strings.Title(rows[0][0])
 	var sb strings.Builder
 
-	// Start building the C# method.
-	sb.WriteString(fmt.Sprintf("public static void Insert(%s obj, SqlTransaction trans)\n{\n", tableName))
-	sb.WriteString("    string strSql = @\"insert into IBP_ManagementList(\n")
+	// 开始构建 C# 方法
+	sb.WriteString("```csharp\n")
+	sb.WriteString(fmt.Sprintf("public static void Add(%s obj, SqlTransaction trans)\n{\n", tableName))
 
-	// Collect column names and prepare SQL parameter list.
-	var columns []string
+	// SQL 语句及列名
+	sb.WriteString(fmt.Sprintf("    string strSql = @\"INSERT INTO %s (\n", tableName))
+
 	var params []string
-	for _, row := range rows[1:] { // Skip the first row which contains the table name.
-		if len(row) >= 2 { // Ensure there are at least two columns (name and type).
+	for i, row := range rows[1:] { // 跳过第一行
+		if len(row) >= 2 { // 确保至少有两列
 			columnName := row[0]
-			columnType := s.mapExcelToSqlDbType(row[1])
+			// 添加参数到 SQL 插入语句
+			params = append(params, fmt.Sprintf("@%s", columnName))
 
-			columns = append(columns, columnName)
-			params = append(params, "@"+columnName)
-
-			// Add SqlParameter initialization to the builder.
-			sb.WriteString(fmt.Sprintf("        new SqlParameter(\"%s\", SqlDbType.%s),\n", columnName, columnType))
+			// 在最后一行前面添加逗号
+			if i != len(rows[1:])-1 {
+				sb.WriteString(fmt.Sprintf("        %s,\n", columnName))
+			} else {
+				sb.WriteString(fmt.Sprintf("        %s\n", columnName))
+			}
 		}
 	}
 
-	// Complete the SQL command string.
-	sb.WriteString(strings.Join(columns, ",") + ") values(")
-	sb.WriteString(strings.Join(params, ",") + ")\";\n\n")
+	sb.WriteString(") VALUES (" + strings.Join(params, ", ") + ")\";\n\n")
 
-	// Initialize the SqlParameter array.
-	sb.WriteString("    SqlParameter[] parameters = new SqlParameter[] {\n")
-	for i, p := range params {
-		if i > 0 {
-			sb.WriteString(",\n")
+	// 添加参数设置
+	sb.WriteString("    SqlParameter[] params = new SqlParameter[] {\n")
+	for _, row := range rows[1:] { // 跳过第一行
+		if len(row) >= 2 {
+			columnName := row[0]
+			columnType := s.mapExcelToSqlDbType(row[1]) // 使用 mapExcelToSqlDbType 函数
+			sb.WriteString(fmt.Sprintf("        new SqlParameter(\"%s\", SqlDbType.%s, 50),\n", columnName, columnType))
 		}
-		sb.WriteString(fmt.Sprintf("        %s", p))
 	}
-	sb.WriteString("\n    };\n\n")
+	sb.WriteString("    };\n\n")
 
-	// Assign values to parameters.
+	// 添加参数赋值
 	sb.WriteString("    int i = -1;\n")
-	for _, col := range columns {
-		sb.WriteString(fmt.Sprintf("    parameters[++i].Value = obj.%s;\n", col))
+	for _, row := range rows[1:] { // 跳过第一行
+		if len(row) >= 2 {
+			columnName := row[0]
+			sb.WriteString(fmt.Sprintf("    params[++i].Value = obj.%s;\n", columnName))
+		}
 	}
 
-	// Execute the command.
+	// 添加执行 SQL 的代码
 	sb.WriteString("    if (trans != null)\n")
-	sb.WriteString("        FXSZMIS.Data.SQLHelper.ExecuteNonQuery(trans, CommandType.Text, strSql, parameters);\n")
+	sb.WriteString("        FXSZMIS.Data.SQLHelper.ExecuteNonQuery(trans, CommandType.Text, strSql, params);\n")
 	sb.WriteString("    else\n")
-	sb.WriteString(fmt.Sprintf("        FXSZMIS.Data.SQLHelper.ExecuteNonQuery(%s.Connection, CommandType.Text, strSql, parameters);\n", tableName))
-	sb.WriteString("}\n")
-
+	sb.WriteString(fmt.Sprintf("        FXSZMIS.Data.SQLHelper.ExecuteNonQuery(%s.Connection, CommandType.Text, strSql, params);\n", tableName))
+	sb.WriteString("}\n```\n")
 	return sb.String(), nil
 }
 
